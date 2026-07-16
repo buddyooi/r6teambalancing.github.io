@@ -175,7 +175,9 @@
 </div>
 
 <script>
-    // Constants matching the configuration parameters
+    // 1. Core Config: Point this to your live Cloudflare Worker URL (No trailing slash)
+    const PROXY_BASE_URL = `https://still-violet-64d5.andrew10419.workers.dev`;
+
     const DEFAULT_RP = 1500;
     const BASE_DELAY = 2500;
 
@@ -202,12 +204,12 @@
         document.getElementById('statusLog').innerText = "Processing started...";
     }
 
-    // Centralized API Requesting function mirroring Python's resilient loop
-    async function requestApi(url, apiKey, maxRetries = 4, baseDelay = 2500) {
+    // Centralized API Requesting function with safe query param proxy routing
+    async function requestApi(targetUrl, apiKey, maxRetries = 3, baseDelay = 2500) {
         let currentDelay = baseDelay;
         
-        // 🛠️ FIXED: Routes the request through your private Cloudflare worker proxy URL to bypass CORS blocks
-        const proxiedUrl = `https://still-violet-64d5.andrew10419.workers.dev/${url}`;
+        // 🛠️ FIXED: Securely passes the target URL via a query parameter (?url=...) to bypass CORS safely
+        const proxiedUrl = `${PROXY_BASE_URL}/?url=${encodeURIComponent(targetUrl)}`;
         
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
@@ -247,9 +249,10 @@
 
     // Fallback parser handling full stats data mapping
     async function fetchLifetimeMaxRp(username, apiKey) {
-        const url = `https://api.r6data.com/api/stats?type=fullStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;
+        // 🛠️ FIXED: Set target directly to the R6 data server
+        const targetUrl = `https://api.r6data.com/api/stats?type=fullStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;        
         try {
-            const resJson = await requestApi(url, apiKey);
+            const resJson = await requestApi(targetUrl, apiKey);
             const segments = resJson?.data?.segments;
             
             let maxPoints = 0;
@@ -276,9 +279,10 @@
 
     // Primary parser managing individual lookups
     async function fetchPlayerRp(username, apiKey) {
-        const url = `https://api.r6data.com/api/stats?type=seasonalStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;
+        // 🛠️ FIXED: Set target directly to the R6 data server
+        const targetUrl = `https://api.r6data.com/api/stats?type=seasonalStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;
         try {
-            const resJson = await requestApi(url, apiKey);
+            const resJson = await requestApi(targetUrl, apiKey);
             const historyData = resJson?.data?.history?.data;
 
             // Scenario A: Seasonal profile data array exists
