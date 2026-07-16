@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R6 Community Team Balancer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+        }
+        .wrapper {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #fca311;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .card {
+            background-color: #1e1e1e;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #ccc;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 10px;
+            background-color: #2c2c2c;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .player-input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        button {
+            background-color: #fca311;
+            color: #000;
+            border: none;
+            padding: 14px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background-color: #e59400;
+        }
+        #statusLog {
+            background-color: #0a0a0a;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 15px;
+            color: #a0a0a0;
+            white-space: pre-wrap;
+        }
+        .team-box {
+            margin-top: 25px;
+            padding: 20px;
+            border-radius: 6px;
+        }
+        .blue-team {
+            background-color: rgba(33, 150, 243, 0.08);
+            border-left: 5px solid #2196F3;
+        }
+        .orange-team {
+            background-color: rgba(255, 152, 0, 0.08);
+            border-left: 5px solid #ff9800;
+        }
+        .team-title {
+            margin-top: 0;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .blue-title { color: #2196F3; }
+        .orange-title { color: #ff9800; }
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+        li {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        .total-rp {
+            font-weight: bold;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .result-summary {
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 25px;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+
+<div class="wrapper">
+    <h1>R6 Custom Match Balancer</h1>
+    
+    <div class="grid">
+        <div class="card">
+            <div class="form-group">
+                <label for="base64Key">Base64 Encoded API Key</label>
+                <input type="password" id="base64Key" placeholder="Paste your base64 encoded API key here">
+            </div>
+            
+            <label>Ubisoft IDs (Minimum 2, Maximum 10)</label>
+            <div class="player-input-grid" id="playerInputsContainer">
+                </div>
+            
+            <button id="balanceBtn" onclick="processAndBalance()">Fetch Stats & Balance Teams</button>
+            
+            <div id="statusLog">System Idle. Awaiting entry...</div>
+        </div>
+        
+        <div class="card">
+            <h3>Matchup Matrix</h3>
+            <hr style="border-color: #333;">
+            
+            <div id="blueTeamBox" class="team-box blue-team" style="display:none;">
+                <div class="team-title blue-title">🔵 Team Blue</div>
+                <ul id="blueTeamList"></ul>
+                <div class="total-rp" id="blueTotal">Total RP: 0</div>
+            </div>
+            
+            <div id="orangeTeamBox" class="team-box orange-team" style="display:none;">
+                <div class="team-title orange-title">🟠 Team Orange</div>
+                <ul id="orangeTeamList"></ul>
+                <div class="total-rp" id="orangeTotal">Total RP: 0</div>
+            </div>
+            
+            <div class="result-summary" id="finalDiff" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Constants matching the configuration parameters
+    const DEFAULT_RP = 1500;
+    const BASE_DELAY = 2500;
+
+    // Dynamically generate the 10 player slots on load
+    const container = document.getElementById('playerInputsContainer');
+    for (let i = 1; i <= 10; i++) {
+        container.innerHTML += `
+            <div class="form-group">
+                <input type="text" class="player-input" placeholder="Player ${i} ID">
+            </div>
+        `;
+    }
+
+    // Helper sleep function
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    function logMessage(msg) {
+        const logBox = document.getElementById('statusLog');
+        logBox.innerText += "\n" + msg;
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function clearLog() {
+        document.getElementById('statusLog').innerText = "Processing started...";
+    }
+
+    // Centralized API Requesting function mirroring Python's resilient loop
+    async function requestApi(url, apiKey, maxRetries = 4, baseDelay = 2500) {
+        let currentDelay = baseDelay;
+        
+        // 🛠️ FIXED: Routes the request through your private Cloudflare worker proxy URL to bypass CORS blocks
+        const proxiedUrl = `https://twilight-feather-80de.andrew10419.workers.dev/${url}`;
+        
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                const response = await fetch(proxiedUrl, {
+                    method: 'GET',
+                    headers: {
+                        'api-key': apiKey,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                // Handle temporary overloads or rate limits
+                if ([429, 502, 503, 504].includes(response.status)) {
+                    logMessage(`      ⚠️ Server returned HTTP ${response.status}. Retrying in ${(currentDelay/1000).toFixed(2)}s... (Attempt ${attempt + 1}/${maxRetries})`);
+                    await sleep(currentDelay);
+                    currentDelay = (currentDelay * 2) + (Math.random() * 1000 + 500); // Exponential Backoff + Jitter
+                    continue;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                if (attempt < maxRetries - 1) {
+                    logMessage(`      ⚠️ Network issue. Retrying in ${(currentDelay/1000).toFixed(2)}s... (Attempt ${attempt + 1}/${maxRetries})`);
+                    await sleep(currentDelay);
+                    currentDelay = (currentDelay * 2) + (Math.random() * 1000 + 500);
+                } else {
+                    throw error;
+                }
+            }
+        }
+        throw new Error(`API failed persistently after ${maxRetries} attempts.`);
+    }
+
+    // Fallback parser handling full stats data mapping
+    async function fetchLifetimeMaxRp(username, apiKey) {
+        const url = `https://api.r6data.com/api/stats?type=fullStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;
+        try {
+            const resJson = await requestApi(url, apiKey);
+            const segments = resJson?.data?.segments;
+            
+            let maxPoints = 0;
+            
+            // Loop through seasonal chunks to find the absolute historical max point values
+            if (Array.isArray(segments)) {
+                for (let segment of segments) {
+                    let rpVal = segment?.stats?.maxRankPoints?.value ?? segment?.stats?.maxRankPoint?.value;
+                    if (rpVal) {
+                        maxPoints = Math.max(maxPoints, parseInt(rpVal));
+                    }
+                }
+            } else if (segments && typeof segments === 'object') {
+                let rpVal = segments?.stats?.maxRankPoints?.value ?? segments?.stats?.maxRankPoint?.value;
+                if (rpVal) maxPoints = parseInt(rpVal);
+            }
+
+            return maxPoints > 0 ? maxPoints : null;
+        } catch (e) {
+            logMessage(`   ⚠️ [${username}] Fallback API lookup failed.`);
+            return null;
+        }
+    }
+
+    // Primary parser managing individual lookups
+    async function fetchPlayerRp(username, apiKey) {
+        const url = `https://api.r6data.com/api/stats?type=seasonalStats&nameOnPlatform=${username}&platformType=uplay&modes=ranked`;
+        try {
+            const resJson = await requestApi(url, apiKey);
+            const historyData = resJson?.data?.history?.data;
+
+            // Scenario A: Seasonal profile data array exists
+            if (Array.isArray(historyData) && historyData.length > 0) {
+                const firstRecord = historyData[0];
+                if (Array.isArray(firstRecord) && firstRecord.length > 1) {
+                    const rpValue = firstRecord[1]?.value;
+                    if (rpValue !== undefined && rpValue !== null) {
+                        logMessage(`   -> ${username}: ${parseInt(rpValue).toLocaleString()} RP (Current Season)`);
+                        return parseInt(rpValue);
+                    }
+                }
+            }
+
+            // Scenario B: Active current data is absent, trigger lifetime lookups
+            logMessage(`   ℹ️ [${username}] No seasonal data. Fetching lifetime max rank...`);
+            await sleep(BASE_DELAY);
+            const lifetimeRp = await fetchLifetimeMaxRp(username, apiKey);
+            if (lifetimeRp !== null) {
+                logMessage(`   -> ${username}: ${lifetimeRp.toLocaleString()} RP (Lifetime Max Fallback)`);
+                return lifetimeRp;
+            }
+
+            logMessage(`   ⚠️ [${username}] Missing history. Assigning baseline ${DEFAULT_RP} RP.`);
+            return DEFAULT_RP;
+
+        } catch (e) {
+            logMessage(`   ❌ [${username}] Primary search failed. Trying fallback data routing...`);
+            await sleep(BASE_DELAY);
+            const lifetimeRp = await fetchLifetimeMaxRp(username, apiKey);
+            if (lifetimeRp !== null) {
+                logMessage(`   -> ${username}: ${lifetimeRp.toLocaleString()} RP (Lifetime Max Fallback)`);
+                return lifetimeRp;
+            }
+            logMessage(`   ⚠️ [${username}] Verification failed. Assigning baseline ${DEFAULT_RP} RP.`);
+            return DEFAULT_RP;
+        }
+    }
+
+    // Control framework coordinating input collection, mapping execution, and display operations
+    async function processAndBalance() {
+        const rawBase64 = document.getElementById('base64Key').value.trim();
+        if (!rawBase64) {
+            alert("Please provide a Base64 encoded API Key first!");
+            return;
+        }
+
+        // Base64 decoding handler
+        let decodedKey = "";
+        try {
+            decodedKey = atob(rawBase64);
+        } catch (e) {
+            alert("Failed to decode API key. Please make sure you are inputting a valid Base64 string.");
+            return;
+        }
+
+        // Gather filled inputs dynamically
+        const inputElements = document.querySelectorAll('.player-input');
+        let lobbyIds = [];
+        inputElements.forEach(el => {
+            const val = el.value.trim();
+            if (val) lobbyIds.push(val);
+        });
+
+        // Validation constraint checking
+        if (lobbyIds.length < 2) {
+            alert("Minimum 2 players must be entered to arrange teams! Single entries are blocked.");
+            return;
+        }
+
+        clearLog();
+        document.getElementById('balanceBtn').disabled = true;
+
+        let playersData = [];
+
+        // Sequentially execute lookup batches
+        for (let name of lobbyIds) {
+            const rp = await fetchPlayerRp(name, decodedKey);
+            playersData.push({ name, rp });
+            await sleep(BASE_DELAY);
+        }
+
+        // Greedy Partition Balancing Logic matching Python specifications
+        playersData.sort((a, b) => b.rp - a.rp);
+
+        let blueTeam = [];
+        let orangeTeam = [];
+        let blueTotal = 0;
+        let orangeTotal = 0;
+
+        for (let player of playersData) {
+            if (blueTotal <= orangeTotal && blueTeam.length < Math.floor(playersData.length / 2)) {
+                blueTeam.push(player);
+                blueTotal += player.rp;
+            } else if (orangeTeam.length < Math.ceil(playersData.length / 2)) {
+                orangeTeam.push(player);
+                orangeTotal += player.rp;
+            } else {
+                blueTeam.push(player);
+                blueTotal += player.rp;
+            }
+        }
+
+        // Update UI Outputs
+        document.getElementById('blueTeamList').innerHTML = blueTeam.map(p => `<li><span>${p.name}</span><span>${p.rp.toLocaleString()} RP</span></li>`).join('');
+        document.getElementById('orangeTeamList').innerHTML = orangeTeam.map(p => `<li><span>${p.name}</span><span>${p.rp.toLocaleString()} RP</span></li>`).join('');
+
+        document.getElementById('blueTotal').innerText = `Total RP: ${blueTotal.toLocaleString()}`;
+        document.getElementById('orangeTotal').innerText = `Total RP: ${orangeTotal.toLocaleString()}`;
+
+        const diff = Math.abs(blueTotal - orangeTotal);
+        document.getElementById('finalDiff').innerText = `⚖️ Skill Variance: ${diff.toLocaleString()} RP Difference`;
+
+        // Make structural outputs visible
+        document.getElementById('blueTeamBox').style.display = "block";
+        document.getElementById('orangeTeamBox').style.display = "block";
+        document.getElementById('finalDiff').style.display = "block";
+
+        logMessage("✅ Team configuration calculated successfully!");
+        document.getElementById('balanceBtn').disabled = false;
+    }
+</script>
+
+</body>
+</html>
